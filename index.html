@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link type="text/css" rel="stylesheet" href="./css/main.css" />
+  <title>My First three.js App</title>
+</head>
+
+<body>
+  <script async src="./js/es-module-shims.js"></script>
+  <script type="importmap">
+			{
+				"imports": {
+					"three": "./js/three.module.js",
+					"js/": "./js/"
+				}
+			}
+		</script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "js/OrbitControls.js";
+    import { GLTFLoader } from "js/GLTFLoader.js";
+
+    let model, skeleton, camera, renderer, cube, circle;
+    let currentIntersect;
+    // 获取鼠标位置
+    const mouse = new THREE.Vector2();
+    // 创建一个射线
+    const raycaster = new THREE.Raycaster();
+    //创建一个场景
+    const scene = new THREE.Scene();
+    scene.scale.set(.006,.006,.006); //人体图太大，需要设置场景比例
+    scene.background = new THREE.Color(0x3054BF);
+
+    //初始化
+    function init() {
+      //增加两个图形
+      addGraph();
+      //加载文件
+      loaderFile();
+      //场景中加入的图片都是黑色的，需要加入光亮效果
+      addLight();
+      //初始化相机
+      initCamera()
+      //初始化渲染
+      rendererFn()
+      //轨道控制
+      controls()
+      //增加鼠标滑过事件
+      const canvasDom = document.getElementsByTagName('canvas')[0];
+      canvasDom.addEventListener("mousemove", mousemoveFn);
+      //增加浏览器响应式效果
+      window.addEventListener("resize", onWindowResize);
+    }
+    init();
+
+    //获取包围盒的宽高深
+    function getWidthHeightDepth(model) {
+      //获取3D模型的宽、高、深度
+      const box = new THREE.Box3();
+      //获取模型的包围盒
+      box.setFromObject(model);
+      //包围盒 - 宽
+      const width = box.max.x - box.min.x;
+      //包围盒 - 高
+      const height = box.max.y - box.min.y;
+      //包围盒 - 深
+      const depth = box.max.z - box.min.z;
+      return {
+        width,
+        height,
+        depth,
+      };
+    }
+
+    //加载 3D模型 文件
+    function loaderFile() {
+      //加载器，用来加载 gltf 资源
+      const loader = new GLTFLoader();
+      loader.load("./images/scene.gltf", function (gltf) {
+        model = gltf.scene;
+        //获取包围盒的宽度深
+        const { height } = getWidthHeightDepth(model);
+        //拿到人体图的高度，y方向 向下渲染一半
+        model.position.y = -(height * 0.5);
+        scene.add(model);
+
+        //横过；横越；穿过；横渡
+        // model.traverse( function ( object ) {
+        //   if ( object.isMesh ) object.castShadow = true;
+        // } );
+
+        //用来模拟骨骼的辅助对象
+        // skeleton = new THREE.SkeletonHelper( model );
+        // skeleton.visible = false;
+        // scene.add( skeleton );
+
+        //调用动画
+        animate();
+      });
+    }
+
+    //初始化渲染
+    function rendererFn() {
+      // 用 WebGL 渲染出场景
+      renderer = new THREE.WebGLRenderer({ antialias: true }); //是否执行抗锯齿，默认为 false
+      renderer.setPixelRatio(window.devicePixelRatio); //设置像素比
+      renderer.setSize(window.innerWidth, window.innerHeight); //输出 Canvas 的大小，并调整好像素比
+      renderer.outputEncoding = THREE.sRGBEncoding; //定义渲染器的输出编码
+      renderer.shadowMap.enabled = true; //包含阴影贴图的使用
+      document.body.appendChild(renderer.domElement);
+    }
+
+    //轨道控制 - 相机围绕目标进行轨道运动
+    function controls() {
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.autoRotate = true;
+      controls.enablePan = false;
+      controls.enableZoom = true;
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+
+    // 相机 - 使用「透视投影」来进行投影
+    function initCamera() {
+      /**
+       * PerspectiveCamera
+       * fov — 摄像机视锥体垂直视野角度
+       * aspect — 摄像机视锥体长宽比
+       * near — 摄像机视锥体近端面
+       * far — 摄像机视锥体远端面
+       */
+      camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        1,
+        1000
+      );
+      /**
+       * params(1)：左右角度
+       * params(2)：上下角度
+       * params(3)：远近角度
+       */
+      camera.position.set(0, 0, 3); //设置相机位置
+    }
+
+    //鼠标滑过事件
+    function mousemoveFn() {
+      // 将鼠标位置转换为 Three.js 坐标系中的坐标
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      // 设置射线的起点
+      raycaster.setFromCamera(mouse, camera);
+      // 获取射线和所有模型相交的点
+      const intersects = raycaster.intersectObjects(scene.children, true);
+      /**
+       * 先判断是否有选中区域
+       * 如果当前选中的区域 和 之前选中的区域不一致
+       * 缓存原来区域的颜色，并把当前区域的颜色变成红色
+      */
+      if (intersects.length > 0) {
+        if(currentIntersect != intersects[0].object){
+          if( currentIntersect ) currentIntersect.material.emissive.setHex(currentIntersect.currentHex);
+          currentIntersect = intersects[0].object;
+          currentIntersect.currentHex = currentIntersect.material.emissive.getHex();
+          currentIntersect.material.emissive.set(0xff0000);
+        }
+      } else {
+        if ( currentIntersect ) currentIntersect.material.emissive.setHex( currentIntersect.currentHex );
+        currentIntersect = null;
+      }
+    }
+
+    //增加浏览器响应式效果
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    //持续执行 requestAnimationFrame 动画
+    function animate() {
+      requestAnimationFrame(animate);
+      // circle.rotation.x += 0.01;
+      // circle.rotation.y += 0.01;
+      renderer.render(scene, camera);
+    }
+  
+    //增加图形
+    function addGraph() {
+      //增加一个正方形
+      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      const material = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+      cube = new THREE.Mesh(geometry, material);
+      cube.position.y = 0.5;
+      // scene.add( cube );
+
+      //增加一个圆形
+      const geometry1 = new THREE.CircleGeometry(1, 100);
+      const material1 = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+      circle = new THREE.Mesh(geometry1, material1);
+      circle.position.y = 1;
+      // scene.add( circle );
+    }
+
+    //增加光亮效果
+    function addLight() {
+      //用平行光来模拟太阳光的效果
+      let directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+      scene.add(directionalLight);
+      //光照颜色从天空光线颜色渐变到地面光线颜色
+      let hemisphereLight = new THREE.HemisphereLight( 0xffffbb, 0x080820, 1 );
+      scene.add(hemisphereLight);
+    }
+
+  </script>
+</body>
+
+</html>
