@@ -471,7 +471,7 @@
     },
     {
       "mesh": 0,
-      "name": "Object_7"
+      "name": "chedi"
     },
     {
       "children": [
@@ -492,7 +492,7 @@
     },
     {
       "mesh": 1,
-      "name": "Object_9"
+      "name": "chelun"
     },
     {
       "name": "Camera001",
@@ -631,7 +631,7 @@
     },
     {
       "mesh": 2,
-      "name": "Object_23"
+      "name": "chejia"
     },
     {
       "name": "Sky001",

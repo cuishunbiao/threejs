@@ -15,24 +15,30 @@
 			{
 				"imports": {
 					"three": "./js/three.module.js",
-					"js/": "./js/"
+					"js": "./js/"
 				}
 			}
 		</script>
   <script type="module">
-    import * as THREE from "three";
-    import { OrbitControls } from "js/OrbitControls.js";
-    import { GLTFLoader } from "js/GLTFLoader.js";
+    import * as THREE from "./js/three.module.js";
+    import { OrbitControls } from "./js/OrbitControls.js";
+    import { GLTFLoader } from "./js/GLTFLoader.js";
+    import { FontLoader } from "./js/FontLoader.js";
+    import { TextGeometry } from "./js/TextGeometry.js";
+    import { EffectComposer } from './js/EffectComposer.js';
+    import { RenderPass } from './js/RenderPass.js';
+    import { OutlinePass } from './js/OutlinePass.js';
 
-    let model, skeleton, camera, renderer, cube, circle;
+    let model, skeleton, camera, renderer, cube, circle, composer, outlinePass, renderPass;
     let currentIntersect;
+    let selectedObjects = [];//当前选中的模型位置
     // 获取鼠标位置
     const mouse = new THREE.Vector2();
     // 创建一个射线
     const raycaster = new THREE.Raycaster();
     //创建一个场景
     const scene = new THREE.Scene();
-    scene.scale.set(.006,.006,.006); //人体图太大，需要设置场景比例
+    scene.scale.set(.006, .006, .006); //人体图太大，需要设置场景比例
     scene.background = new THREE.Color(0x3054BF);
 
     //初始化
@@ -41,6 +47,8 @@
       addGraph();
       //加载文件
       loaderFile();
+      //加载文字
+      // loaderText();
       //场景中加入的图片都是黑色的，需要加入光亮效果
       addLight();
       //初始化相机
@@ -49,9 +57,17 @@
       rendererFn()
       //轨道控制
       controls()
+      //执行一个点击事件
+      checkIntersection()
+      //调用动画
+      animate();
+      
+      // render();
+
       //增加鼠标滑过事件
       const canvasDom = document.getElementsByTagName('canvas')[0];
-      canvasDom.addEventListener("mousemove", mousemoveFn);
+      canvasDom.addEventListener("mousemove", onMouseMove);
+      canvasDom.addEventListener("click", onMouseClick, false);
       //增加浏览器响应式效果
       window.addEventListener("resize", onWindowResize);
     }
@@ -86,20 +102,61 @@
         const { height } = getWidthHeightDepth(model);
         //拿到人体图的高度，y方向 向下渲染一半
         model.position.y = -(height * 0.5);
-        scene.add(model);
 
+        //初始化数据 - 标红
+        // setSelectArea(model);
+
+        const bodyStr = ['chedi', 'chejia', 'chelun']
         //横过；横越；穿过；横渡
-        // model.traverse( function ( object ) {
-        //   if ( object.isMesh ) object.castShadow = true;
-        // } );
+        model.traverse(function (object) {
+          if (object.type === 'Mesh') {
+            object.text = '这是什么什么部位'
+          }
+          // console.log(bodyStr.includes(object.name));
+          // if ( object.isMesh ) object.castShadow = true;
+        });
+
+        //添加到场景
+        scene.add(model);
 
         //用来模拟骨骼的辅助对象
         // skeleton = new THREE.SkeletonHelper( model );
         // skeleton.visible = false;
         // scene.add( skeleton );
+      });
+    }
 
-        //调用动画
-        animate();
+    //加载文字
+    function loaderText() {
+      const texts = [
+        { position: 'chedi', text: '车架', x: -20, y: 105, z: 0 },
+        { position: 'chejia', text: '车身', x: -135, y: -20, z: 0 },
+        { position: 'chelun', text: '车底', x: -20, y: -100, z: 0 },
+      ]
+      // 创建一个新的字体加载器
+      const loader = new FontLoader();
+      // 加载字体文件
+      loader.load('./../fonts/Alibaba_PuHuiTi_Regular.json', (font) => {
+        for (const { text, x, y, z } of texts) {
+          /**
+           * 1. 使用 TextGeometry 类，创建文字几何体
+           * 2. 使用 Mesh 类将文字几何体包装成文字网格
+           * 3. 设置文字网格的位置
+           * 4. 将文字网格添加到场景中
+          */
+          const textGeometry = new TextGeometry(text, {
+            font,
+            size: 15,
+            height: 5,
+            curveSegments: 12,
+          });
+          const textMaterial = new THREE.MeshBasicMaterial({
+            color: '#ff0000',
+          })
+          const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+          textMesh.position.set(x, y, z);
+          scene.add(textMesh);
+        }
       });
     }
 
@@ -147,31 +204,83 @@
       camera.position.set(0, 0, 3); //设置相机位置
     }
 
-    //鼠标滑过事件
-    function mousemoveFn() {
+    //初始化选中区域 - 变成红色
+    function setSelectArea(meshes) {
+      for (let i = 0; i < meshes.length; i++) {
+        if (meshes[i] === 'Object_0') {
+          console.log('找到了元素');
+        }
+      }
+    }
+
+    //鼠标事件
+    function onMouseEvent(){
       // 将鼠标位置转换为 Three.js 坐标系中的坐标
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
       // 设置射线的起点
       raycaster.setFromCamera(mouse, camera);
       // 获取射线和所有模型相交的点
-      const intersects = raycaster.intersectObjects(scene.children, true);
+      return raycaster.intersectObjects(scene.children, true);
+    }
+
+    //鼠标滑过事件
+    function onMouseMove() {
+      const intersects = onMouseEvent()
       /**
        * 先判断是否有选中区域
        * 如果当前选中的区域 和 之前选中的区域不一致
        * 缓存原来区域的颜色，并把当前区域的颜色变成红色
       */
       if (intersects.length > 0) {
-        if(currentIntersect != intersects[0].object){
-          if( currentIntersect ) currentIntersect.material.emissive.setHex(currentIntersect.currentHex);
+        if (currentIntersect != intersects[0].object) {
+          if (currentIntersect) currentIntersect.material.emissive.setHex(currentIntersect.currentHex);
           currentIntersect = intersects[0].object;
           currentIntersect.currentHex = currentIntersect.material.emissive.getHex();
           currentIntersect.material.emissive.set(0xff0000);
         }
       } else {
-        if ( currentIntersect ) currentIntersect.material.emissive.setHex( currentIntersect.currentHex );
+        if (currentIntersect) currentIntersect.material.emissive.set(currentIntersect.currentHex);
         currentIntersect = null;
       }
+    }
+
+    //鼠标点击事件
+    function onMouseClick(){
+      const intersects = onMouseEvent()
+      function addSelectedObject( object ) {
+        selectedObjects = [];
+        selectedObjects.push( object );
+      }
+      /**
+       * 先判断是否有选中区域
+       * 如果当前选中的区域 和 之前选中的区域不一致
+       * 缓存原来区域的颜色，并把当前区域的颜色变成红色
+      */
+      if (intersects.length > 0) {
+        //将所有的相交的模型的颜色设置为红色，如果只需要将第一个触发事件，那就数组的第一个模型改变颜色即可
+        const selectedObject = intersects[0].object;
+        addSelectedObject( selectedObject );
+        outlinePass.selectedObjects = selectedObjects;
+
+      } else {
+        outlinePass.selectedObjects = []
+        selectedObjects = []
+      }
+    }
+
+    //添加点击选中
+    function checkIntersection() {
+      composer = new EffectComposer(renderer)
+      renderPass = new RenderPass(scene, camera)
+      composer.addPass(renderPass)
+      outlinePass = new OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+      composer.addPass(outlinePass);
+      outlinePass.visibleEdgeColor.set('orange') //包围线颜色
+      // 设置 OutlinePass 的参数
+      outlinePass.edgeStrength = 2;
+      outlinePass.edgeGlow = 1.5;
+      // outlinePass.scale.set(scale, scale, scale);
     }
 
     //增加浏览器响应式效果
@@ -183,20 +292,19 @@
 
     //持续执行 requestAnimationFrame 动画
     function animate() {
-      requestAnimationFrame(animate);
-      // circle.rotation.x += 0.01;
-      // circle.rotation.y += 0.01;
       renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+      composer.render();
     }
-  
+
     //增加图形
     function addGraph() {
       //增加一个正方形
-      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      const geometry = new THREE.BoxGeometry(100, 100, 100);
       const material = new THREE.MeshBasicMaterial({ color: 0x00ffff });
       cube = new THREE.Mesh(geometry, material);
-      cube.position.y = 0.5;
-      // scene.add( cube );
+      cube.position.y = 200;
+      // scene.add(cube);
 
       //增加一个圆形
       const geometry1 = new THREE.CircleGeometry(1, 100);
@@ -212,9 +320,10 @@
       let directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
       scene.add(directionalLight);
       //光照颜色从天空光线颜色渐变到地面光线颜色
-      let hemisphereLight = new THREE.HemisphereLight( 0xffffbb, 0x080820, 1 );
+      let hemisphereLight = new THREE.HemisphereLight(0xffffbb, 0x080820, 1);
       scene.add(hemisphereLight);
     }
+
 
   </script>
 </body>
